@@ -1,0 +1,13 @@
+catalog:
+  name: "dbxarchitectlab_prod"
+  managed_prefix: "managed"
+  enable_grants: true
+  # Group names, user emails or service principal application IDs. The deployment service principal
+  # (DEPLOY_SP_APPLICATION_ID) is added automatically.
+  grant_principals:
+    - "DBX_Architect_Lab_Admin"
+    - "dbxarchitectlab@gmail.com"
+  # grant_privileges:
+  #   - "BROWSE"
+  #   - "USE_CATALOG"
+  #   - "CREATE_SCHEMA"

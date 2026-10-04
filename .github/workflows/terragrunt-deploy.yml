@@ -1,0 +1,151 @@
+name: Terragrunt Deploy Stacks
+
+on:
+  workflow_dispatch:
+    inputs:
+      stack:
+        description: Stack to deploy
+        type: choice
+        required: true
+        options:
+          - metastore
+          - dev-dbxarchitectlab-workspace
+          - dev-dbxarchitectlab-workspace-bootstrap
+          - uat-dbxarchitectlab-workspace
+          - uat-dbxarchitectlab-workspace-bootstrap
+          - prod-dbxarchitectlab-workspace
+          - prod-dbxarchitectlab-workspace-bootstrap
+      action:
+        description: Terragrunt action
+        type: choice
+        required: true
+        default: plan
+        options:
+          - validate
+          - plan
+          - apply
+          - destroy
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  terragrunt:
+    runs-on: ubuntu-latest
+    # prod-* and uat-* stacks use the matching GitHub environment; all others use "dev".
+    environment: ${{ startsWith(inputs.stack, 'prod-') && 'prod' || startsWith(inputs.stack, 'uat-') && 'uat' || 'dev' }}
+    env:
+      TG_NON_INTERACTIVE: "true"
+      # Region of the GitHub OIDC session; each stack sets its own provider region from config.yaml.
+      AWS_REGION: us-east-1
+      # Databricks service principal (OAuth M2M), used by both the account and workspace providers.
+      DATABRICKS_CLIENT_ID: ${{ secrets.DATABRICKS_CLIENT_ID }}
+      DATABRICKS_CLIENT_SECRET: ${{ secrets.DATABRICKS_CLIENT_SECRET }}
+      DATABRICKS_ACCOUNT_ID: ${{ secrets.DATABRICKS_ACCOUNT_ID }}
+      DATABRICKS_METASTORE_ID: ${{ secrets.DATABRICKS_METASTORE_ID }}
+      # Deployment service principal, granted on the catalog and external location by workspace-bootstrap.
+      DEPLOY_SP_APPLICATION_ID: ${{ secrets.DATABRICKS_CLIENT_ID }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          role-session-name: gh-${{ github.run_id }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.14.6
+
+      - name: Install Terragrunt
+        shell: bash
+        run: |
+          set -euo pipefail
+          TG_VERSION="0.99.4"
+          curl -sSL -o terragrunt "https://github.com/gruntwork-io/terragrunt/releases/download/v${TG_VERSION}/terragrunt_linux_amd64"
+          chmod +x terragrunt
+          sudo mv terragrunt /usr/local/bin/terragrunt
+          terragrunt --version
+
+      - name: Resolve stack path
+        id: stack
+        shell: bash
+        run: |
+          set -euo pipefail
+          case "${{ inputs.stack }}" in
+            metastore) echo "path=live/metastore" >> "$GITHUB_OUTPUT" ;;
+            dev-dbxarchitectlab-workspace) echo "path=live/dev/workspace" >> "$GITHUB_OUTPUT" ;;
+            dev-dbxarchitectlab-workspace-bootstrap) echo "path=live/dev/workspace-bootstrap" >> "$GITHUB_OUTPUT" ;;
+            uat-dbxarchitectlab-workspace) echo "path=live/uat/workspace" >> "$GITHUB_OUTPUT" ;;
+            uat-dbxarchitectlab-workspace-bootstrap) echo "path=live/uat/workspace-bootstrap" >> "$GITHUB_OUTPUT" ;;
+            prod-dbxarchitectlab-workspace) echo "path=live/prod/workspace" >> "$GITHUB_OUTPUT" ;;
+            prod-dbxarchitectlab-workspace-bootstrap) echo "path=live/prod/workspace-bootstrap" >> "$GITHUB_OUTPUT" ;;
+            *) echo "Unsupported stack: ${{ inputs.stack }}"; exit 1 ;;
+          esac
+
+      - name: Debug runtime identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "Selected stack path: ${{ steps.stack.outputs.path }}"
+          echo "Workflow ref: ${GITHUB_REF}"
+          echo "DATABRICKS_CLIENT_ID=${DATABRICKS_CLIENT_ID}"
+          aws sts get-caller-identity --output json
+
+      - name: Terragrunt init
+        working-directory: ${{ steps.stack.outputs.path }}
+        shell: bash
+        run: |
+          set -o pipefail
+          terragrunt init -upgrade 2>&1 | tee terragrunt-init.log
+
+      - name: Terragrunt validate
+        if: ${{ inputs.action == 'validate' }}
+        working-directory: ${{ steps.stack.outputs.path }}
+        shell: bash
+        run: |
+          set -o pipefail
+          terragrunt validate -no-color 2>&1 | tee terragrunt-validate.log
+
+      - name: Terragrunt plan
+        if: ${{ inputs.action == 'plan' }}
+        working-directory: ${{ steps.stack.outputs.path }}
+        shell: bash
+        run: |
+          set -o pipefail
+          terragrunt plan -no-color 2>&1 | tee terragrunt-plan.log
+
+      - name: Terragrunt apply
+        if: ${{ inputs.action == 'apply' }}
+        working-directory: ${{ steps.stack.outputs.path }}
+        shell: bash
+        run: |
+          set -o pipefail
+          terragrunt apply -auto-approve -no-color 2>&1 | tee terragrunt-apply.log
+
+      - name: Terragrunt destroy
+        if: ${{ inputs.action == 'destroy' }}
+        working-directory: ${{ steps.stack.outputs.path }}
+        shell: bash
+        run: |
+          set -o pipefail
+          terragrunt destroy -auto-approve -no-color 2>&1 | tee terragrunt-destroy.log
+
+      - name: Upload Terragrunt logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: terragrunt-logs-${{ inputs.stack }}-${{ github.run_id }}
+          path: |
+            ${{ steps.stack.outputs.path }}/terragrunt-init.log
+            ${{ steps.stack.outputs.path }}/terragrunt-validate.log
+            ${{ steps.stack.outputs.path }}/terragrunt-plan.log
+            ${{ steps.stack.outputs.path }}/terragrunt-apply.log
+            ${{ steps.stack.outputs.path }}/terragrunt-destroy.log
+          if-no-files-found: ignore

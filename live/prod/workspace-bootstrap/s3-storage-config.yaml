@@ -1,0 +1,5 @@
+# S3 bucket for the Unity Catalog external location and the catalog's managed storage.
+# The AWS account ID is appended to keep the name globally unique.
+bucket:
+  name_prefix: "dbx-architect-lab-prod-uc"
+  force_destroy: true
