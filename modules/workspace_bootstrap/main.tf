@@ -17,6 +17,7 @@ module "s3_storage" {
 module "external_location" {
   source = "./modules/databricks-external-location"
 
+  workspace_id                       = var.workspace_id
   external_location_name             = var.external_location_name
   bucket_name                        = module.s3_storage.bucket_name
   storage_credential_name            = coalesce(var.storage_credential_name, "${var.external_location_name}_cred")
@@ -33,6 +34,7 @@ module "external_location" {
 module "unity_catalog" {
   source = "./modules/databricks-unity-catalog"
 
+  workspace_id             = var.workspace_id
   catalog_name             = var.catalog_name
   bucket_name              = module.s3_storage.bucket_name
   catalog_managed_prefix   = var.catalog_managed_prefix

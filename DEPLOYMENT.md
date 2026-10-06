@@ -224,7 +224,10 @@ Repeat 5.2 with the `uat-*` stacks, then the `prod-*` stacks.
 ## 6. Verify
 
 - Account console → **Workspaces**: the workspace is **Running**; open its URL.
-- **Catalog:** the catalog from `catalog-config.yaml` is listed and attached to the metastore.
+- **Catalog:** the catalog from `catalog-config.yaml` is listed. Each environment's catalog, external location
+  and storage credential are bound to that environment's workspace only (`ISOLATED`), so the dev workspace shows
+  only `dbxarchitectlab_dev`, uat only `dbxarchitectlab_uat`, and prod only `dbxarchitectlab_prod`, even though they
+  share one metastore.
 - **Catalog → External data → External locations:** **Test connection** succeeds for the external location.
 - **Compute → Policies:** the cluster policies from `cluster-policy-config.yaml` exist.
 - **Settings → Identity and access:** `DBX_Architect_Lab_Admin` is a workspace admin.

@@ -36,6 +36,7 @@ inputs = merge(
   local.env.inputs,
   {
     databricks_host = dependency.workspace.outputs.workspace_url
+    workspace_id    = dependency.workspace.outputs.workspace_id
 
     region = local.config.region
 
