@@ -3,6 +3,11 @@ variable "catalog_name" {
   type        = string
 }
 
+variable "workspace_id" {
+  description = "ID of the workspace the catalog is bound to (the catalog is hidden from other workspaces)"
+  type        = number
+}
+
 variable "bucket_name" {
   description = "S3 bucket used as managed storage root for the catalog"
   type        = string

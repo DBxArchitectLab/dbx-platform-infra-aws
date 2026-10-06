@@ -26,7 +26,7 @@ resource "aws_iam_role_policy" "this" {
 
 # New IAM roles take a few seconds to become usable; registering the credential too early fails validation.
 resource "time_sleep" "iam_propagation" {
-  create_duration = "30s"
+  create_duration = "60s"
 
   depends_on = [aws_iam_role_policy.this]
 }

@@ -46,7 +46,7 @@ variable "nat_gateway_enabled" {
 
 variable "private_link_enabled" {
   type        = bool
-  default     = true
+  default     = false
   description = "Back-end PrivateLink (REST API + secure cluster connectivity relay). Requires the Databricks Enterprise tier."
 }
 

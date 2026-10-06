@@ -17,6 +17,8 @@ resource "databricks_storage_credential" "this" {
   force_update = true
   # The IAM role is created after the credential; the external location validates access once it exists.
   skip_validation = true
+  # Only usable from this environment's workspace (see databricks_workspace_binding below).
+  isolation_mode = "ISOLATION_MODE_ISOLATED"
 
   aws_iam_role {
     role_arn = local.iam_role_arn
@@ -63,8 +65,24 @@ resource "databricks_external_location" "this" {
   comment         = "Bootstrap external location."
   owner           = local.external_location_owner
   force_update    = true
+  isolation_mode  = "ISOLATION_MODE_ISOLATED"
 
   depends_on = [time_sleep.iam_propagation]
+}
+
+# The metastore is shared by dev/uat/prod; bind the credential and location to this environment's workspace only.
+resource "databricks_workspace_binding" "storage_credential" {
+  securable_name = databricks_storage_credential.this.name
+  securable_type = "storage_credential"
+  workspace_id   = var.workspace_id
+  binding_type   = "BINDING_TYPE_READ_WRITE"
+}
+
+resource "databricks_workspace_binding" "external_location" {
+  securable_name = databricks_external_location.this.name
+  securable_type = "external_location"
+  workspace_id   = var.workspace_id
+  binding_type   = "BINDING_TYPE_READ_WRITE"
 }
 
 resource "databricks_grants" "external_location" {

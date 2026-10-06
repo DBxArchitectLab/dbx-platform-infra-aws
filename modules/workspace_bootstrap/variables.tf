@@ -8,6 +8,11 @@ variable "databricks_host" {
   type        = string
 }
 
+variable "workspace_id" {
+  description = "ID of this environment's workspace; the catalog, external location and storage credential are bound to it only"
+  type        = number
+}
+
 variable "region" {
   description = "AWS region for the S3 bucket and IAM role (e.g. us-east-2)"
   type        = string

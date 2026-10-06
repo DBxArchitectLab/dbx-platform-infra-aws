@@ -25,9 +25,9 @@ network:
   nat_gateway_enabled: true
 
 # Back-end PrivateLink: clusters reach the control plane through VPC endpoints. Requires the
-# Databricks Enterprise tier. Set enabled: false on a Premium account.
+# Databricks Enterprise tier; this account is Premium, so it is off and clusters use the NAT gateway.
 private_link:
-  enabled: true
+  enabled: false
   # Allow users to reach the workspace UI/API from the public internet.
   public_access_enabled: true
   # Regional endpoint service names; check them against
