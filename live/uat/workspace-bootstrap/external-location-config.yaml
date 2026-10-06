@@ -1,0 +1,25 @@
+external_location:
+  name: "ext_loc_dbx_architect_lab_uat"
+  # Unity Catalog owner (defaults to the first grant_principals entry if omitted). Set to a group your Terraform user belongs to, or your deployment SP, so in-place updates succeed.
+  # owner: "DBX_Architect_Lab_Admin"
+  # If null, Terraform uses "<name>_cred" (see workspace_bootstrap module).
+  storage_credential_name: null
+  # IAM role Unity Catalog assumes to read and write the S3 bucket (created by Terraform).
+  iam_role_name: "dbx-architect-lab-uat-uc-access"
+  enable_grants: true
+  # Principals that should manage this location via Terraform must have MANAGE (included in default privileges below).
+  # The first entry is the default owner. Group names, user emails or service principal application IDs. The deployment service principal
+  # (DEPLOY_SP_APPLICATION_ID) is added automatically.
+  grant_principals:
+    - "DBX_Architect_Lab_Admin"
+    - "dbxarchitectlab@gmail.com"
+  grant_privileges:
+    - "MANAGE"
+    - "READ_FILES"
+    - "WRITE_FILES"
+    - "CREATE_EXTERNAL_TABLE"
+  # If apply fails updating the external location before grants run, either:
+  # - run once as a metastore admin, or
+  # - have an admin run: GRANT MANAGE ON EXTERNAL LOCATION `ext_loc_dbx_architect_lab_uat` TO `<deployment SP application ID>`;
+  # - or: terragrunt apply -target=module.external_location.databricks_grants.external_location[0]
+  #   then a full apply (adjust module path if your state differs).

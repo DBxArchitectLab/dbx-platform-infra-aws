@@ -1,0 +1,45 @@
+workspace_name: "dbw-dbx-architect-lab-dev"
+# AWS region; must match the Unity Catalog metastore region (live/metastore/config.yaml).
+region: "us-east-2"
+
+# IAM role the Databricks control plane assumes to launch clusters in this AWS account.
+cross_account_role_name: "dbx-architect-lab-dev-crossaccount"
+
+# Workspace root bucket. The AWS account ID is appended to keep the name globally unique.
+root_bucket:
+  name_prefix: "dbx-architect-lab-dev-root"
+  force_destroy: true
+
+network:
+  vpc_name: "vpc-dbx-architect-lab-dev"
+  vpc_cidr: "10.0.0.0/22"
+  # At least two AZs. With PrivateLink, use AZs where the Databricks endpoint services are available.
+  availability_zones: [ "us-east-2a", "us-east-2b" ]
+  # Cluster subnets, one per AZ (netmask /17 to /26).
+  private_subnet_cidrs: [ "10.0.0.0/24", "10.0.1.0/24" ]
+  # VPC endpoint subnets, one per AZ (only used when private_link.enabled).
+  privatelink_subnet_cidrs: [ "10.0.2.0/27", "10.0.2.32/27" ]
+  # NAT gateway subnet (only used when nat_gateway_enabled).
+  public_subnet_cidr: "10.0.3.0/28"
+  # Outbound internet access for clusters (PyPI, Maven, external APIs).
+  nat_gateway_enabled: true
+
+# Back-end PrivateLink: clusters reach the control plane through VPC endpoints. Requires the
+# Databricks Enterprise tier. Set enabled: false on a Premium account.
+private_link:
+  enabled: true
+  # Allow users to reach the workspace UI/API from the public internet.
+  public_access_enabled: true
+  # Regional endpoint service names; check them against
+  # https://docs.databricks.com/aws/en/resources/ip-domain-region#privatelink-vpc-endpoint-services
+  workspace_vpce_service: "com.amazonaws.vpce.us-east-2.vpce-svc-041dc2b4d7796b8d3"
+  relay_vpce_service: "com.amazonaws.vpce.us-east-2.vpce-svc-090a8fab0d73e39a6"
+
+identity:
+  platform_admin_group_name: "DBX_Architect_Lab_Admin"
+
+tags:
+  Environment: "dev"
+  Application: "Databricks"
+  Compliance: "HIPAA"
+  Owner: "DbxArchitectLab"

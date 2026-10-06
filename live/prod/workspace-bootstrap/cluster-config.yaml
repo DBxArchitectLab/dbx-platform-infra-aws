@@ -1,0 +1,67 @@
+clusters:
+  personal-dbx:
+    policy_name: Personal Compute
+    spark_version: 15.4.x-scala2.12
+    node_type_id: m5d.xlarge
+    num_workers: 0
+    data_security_mode: SINGLE_USER
+    runtime_engine: STANDARD
+    autotermination_minutes: 240
+    single_user_name: dbxarchitectlab@gmail.com
+    spark_conf:
+      spark.databricks.cluster.profile: singleNode
+    aws_attributes:
+      availability: ON_DEMAND
+      zone_id: auto
+    custom_tags:
+      workload: personal-dev
+      bootstrap: "true"
+
+  shared-analytics:
+    policy_name: Shared Compute
+    spark_version: 15.4.x-scala2.12
+    node_type_id: m5d.2xlarge
+    data_security_mode: USER_ISOLATION
+    autotermination_minutes: 120
+    autoscale:
+      min_workers: 2
+      max_workers: 10
+    aws_attributes:
+      availability: SPOT_WITH_FALLBACK
+      first_on_demand: 1
+      zone_id: auto
+    custom_tags:
+      workload: shared-analytics
+      bootstrap: "true"
+
+  power-user-analytics:
+    policy_name: Power User Compute
+    spark_version: 15.4.x-scala2.12
+    node_type_id: m5d.xlarge
+    data_security_mode: USER_ISOLATION
+    autotermination_minutes: 120
+    autoscale:
+      min_workers: 2
+      max_workers: 10
+    aws_attributes:
+      availability: SPOT_WITH_FALLBACK
+      first_on_demand: 1
+      zone_id: auto
+    custom_tags:
+      workload: power-user
+      bootstrap: "true"
+
+  shared-analytics-custom:
+    policy_name: shared_compute_customize
+    node_type_id: m5d.xlarge
+    data_security_mode: USER_ISOLATION
+    autotermination_minutes: 120
+    autoscale:
+      min_workers: 1
+      max_workers: 1
+    aws_attributes:
+      availability: ON_DEMAND
+      zone_id: auto
+    custom_tags:
+      workload: shared-analytics-custom
+      bootstrap: "true"
