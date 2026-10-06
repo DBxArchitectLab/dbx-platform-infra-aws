@@ -97,7 +97,13 @@ aws iam create-open-id-connect-provider \
 ```
 
 Create the role. The trust policy only allows workflow runs in the `dev`, `uat` and `prod` GitHub environments
-of this repo:
+of this repo.
+
+The `DBxArchitectLab` org uses GitHub's ID-based OIDC subject format, so the subject includes the org and repo
+IDs (`repo:<org>@<org-id>/<repo>@<repo-id>:environment:<env>`). The IDs don't change if the org or repo is
+renamed. For a repo that uses the default format, the subject is `repo:<org>/<repo>:environment:<env>`
+instead. If role assumption fails with `Not authorized to perform sts:AssumeRoleWithWebIdentity`, print the
+token's `sub` claim from a workflow step and make the trust policy match it exactly.
 
 ```bash
 cat > gh-trust.json <<EOF
@@ -111,9 +117,9 @@ cat > gh-trust.json <<EOF
       "StringEquals": {
         "token.actions.githubusercontent.com:aud": "sts.amazonaws.com",
         "token.actions.githubusercontent.com:sub": [
-          "repo:DBxArchitectLab/dbx-platform-infra-aws:environment:dev",
-          "repo:DBxArchitectLab/dbx-platform-infra-aws:environment:uat",
-          "repo:DBxArchitectLab/dbx-platform-infra-aws:environment:prod"
+          "repo:DBxArchitectLab@336295900/dbx-platform-infra-aws@1404588117:environment:dev",
+          "repo:DBxArchitectLab@336295900/dbx-platform-infra-aws@1404588117:environment:uat",
+          "repo:DBxArchitectLab@336295900/dbx-platform-infra-aws@1404588117:environment:prod"
         ]
       }
     }
@@ -227,7 +233,7 @@ Repeat 5.2 with the `uat-*` stacks, then the `prod-*` stacks.
 
 | Symptom | Likely cause |
 | --- | --- |
-| `Not authorized to perform sts:AssumeRoleWithWebIdentity` | OIDC trust `sub` doesn't match `repo:DBxArchitectLab/dbx-platform-infra-aws:environment:<env>`, or the job isn't running in a GitHub environment |
+| `Not authorized to perform sts:AssumeRoleWithWebIdentity` | OIDC trust `sub` doesn't match the token's `sub` claim (`repo:DBxArchitectLab@336295900/dbx-platform-infra-aws@1404588117:environment:<env>`; see step 2.2), or the job isn't running in a GitHub environment |
 | `terragrunt init` fails: `NoSuchBucket` | State bucket from step 2.1 missing, or created in another account/region |
 | `get_env` error for `DATABRICKS_*` | Secret missing in the GitHub environment the stack runs in |
 | Databricks `401` / `invalid_client` | Wrong `DATABRICKS_CLIENT_ID`/`SECRET`, or the secret expired (regenerate it in the account console) |
