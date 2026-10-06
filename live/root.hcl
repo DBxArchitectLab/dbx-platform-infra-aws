@@ -2,7 +2,7 @@ locals {
   # Terraform state lives in an S3 bucket in the deployment AWS account. The account ID suffix keeps the
   # bucket name globally unique. Native S3 locking (use_lockfile) needs Terraform >= 1.10.
   state_bucket = "dbx-architect-lab-tfstate-${get_aws_account_id()}"
-  state_region = "us-east-1"
+  state_region = "us-east-2"
 }
 
 remote_state {

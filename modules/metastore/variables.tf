@@ -8,7 +8,7 @@ variable "metastore_name" {
 
 variable "region" {
   type        = string
-  description = "AWS region for the metastore (e.g. us-east-1). Also used by the generated aws provider."
+  description = "AWS region for the metastore (e.g. us-east-2). Also used by the generated aws provider."
 }
 
 variable "storage_root" {

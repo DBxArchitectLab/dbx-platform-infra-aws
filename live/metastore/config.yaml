@@ -3,7 +3,7 @@
 metastore:
   name: "metastore-dbx-architect-lab"
   # AWS region; must match the region of every workspace assigned to this metastore.
-  region: "us-east-1"
+  region: "us-east-2"
   # Optional metastore-level managed storage. Databricks recommends leaving it unset and giving each
   # catalog its own storage root (workspace-bootstrap does this). If you set it, also set data_access_role_arn.
   # storage_root: "s3://<bucket>/metastore"

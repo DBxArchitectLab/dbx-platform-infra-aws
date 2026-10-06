@@ -38,7 +38,7 @@ jobs:
     env:
       TG_NON_INTERACTIVE: "true"
       # Region of the GitHub OIDC session; each stack sets its own provider region from config.yaml.
-      AWS_REGION: us-east-1
+      AWS_REGION: us-east-2
       # Databricks service principal (OAuth M2M), used by both the account and workspace providers.
       DATABRICKS_CLIENT_ID: ${{ secrets.DATABRICKS_CLIENT_ID }}
       DATABRICKS_CLIENT_SECRET: ${{ secrets.DATABRICKS_CLIENT_SECRET }}

@@ -56,7 +56,7 @@ This repository provisions Databricks workspaces on AWS with:
 
 See [DEPLOYMENT.md](DEPLOYMENT.md) for the full setup and deployment steps. In short:
 
-- AWS account with an S3 bucket `dbx-architect-lab-tfstate-<aws-account-id>` (us-east-1) for Terraform state
+- AWS account with an S3 bucket `dbx-architect-lab-tfstate-<aws-account-id>` (us-east-2) for Terraform state
 - IAM role trusted by GitHub OIDC for this repo's `dev`/`uat`/`prod` environments
 - Databricks account on AWS (Enterprise tier if PrivateLink is enabled)
 - Databricks service principal with an OAuth secret, as account admin

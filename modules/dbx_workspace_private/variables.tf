@@ -4,7 +4,7 @@ variable "databricks_account_id" {
 
 variable "region" {
   type        = string
-  description = "AWS region for the workspace and its VPC (e.g. us-east-1)."
+  description = "AWS region for the workspace and its VPC (e.g. us-east-2)."
 }
 
 variable "workspace_name" {

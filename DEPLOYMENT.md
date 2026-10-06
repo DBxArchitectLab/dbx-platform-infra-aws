@@ -15,7 +15,7 @@ Values used throughout this guide (change them if yours differ):
 
 | Name | Value | Defined in |
 | --- | --- | --- |
-| AWS region | `us-east-1` | `live/*/config.yaml`, `live/metastore/config.yaml`, `live/root.hcl` (state), workflow `AWS_REGION` |
+| AWS region | `us-east-2` | `live/*/config.yaml`, `live/metastore/config.yaml`, `live/root.hcl` (state), workflow `AWS_REGION` |
 | Terraform state bucket | `dbx-architect-lab-tfstate-<aws-account-id>` | `live/root.hcl` |
 | Workspace root buckets | `dbx-architect-lab-<env>-root-<aws-account-id>` | `live/<env>/config.yaml` (`root_bucket.name_prefix`) |
 | Unity Catalog buckets | `dbx-architect-lab-<env>-uc-<aws-account-id>` | `live/<env>/workspace-bootstrap/s3-storage-config.yaml` |
@@ -37,7 +37,7 @@ Values used throughout this guide (change them if yours differ):
 
 Edit and commit these before the first run.
 
-- [ ] **Region.** Everything defaults to `us-east-1`. To change it, update `region` in every
+- [ ] **Region.** Everything defaults to `us-east-2`. To change it, update `region` in every
       `live/<env>/config.yaml`, `metastore.region` in `live/metastore/config.yaml`, `availability_zones`, and
       the PrivateLink service names (below). The metastore and all workspaces must be in the same region.
 - [ ] **PrivateLink (`private_link.enabled` in `live/<env>/config.yaml`).** On by default.
@@ -61,20 +61,21 @@ Edit and commit these before the first run.
 Run these as an AWS user/role with administrator access in the target account.
 
 ```bash
-export AWS_REGION="us-east-1"
+export AWS_REGION="us-east-2"
 ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
 echo "$ACCOUNT_ID"
 ```
 
 ### 2.1 Terraform state bucket
 
-`live/root.hcl` expects `dbx-architect-lab-tfstate-<account-id>` in `us-east-1`. State locking uses an S3 lock
+`live/root.hcl` expects `dbx-architect-lab-tfstate-<account-id>` in `us-east-2`. State locking uses an S3 lock
 file, so no DynamoDB table is needed.
 
 ```bash
 STATE_BUCKET="dbx-architect-lab-tfstate-$ACCOUNT_ID"
 
-aws s3api create-bucket --bucket "$STATE_BUCKET" --region us-east-1
+aws s3api create-bucket --bucket "$STATE_BUCKET" --region us-east-2 \
+  --create-bucket-configuration LocationConstraint=us-east-2
 aws s3api put-bucket-versioning --bucket "$STATE_BUCKET" \
   --versioning-configuration Status=Enabled
 aws s3api put-public-access-block --bucket "$STATE_BUCKET" \
@@ -82,8 +83,8 @@ aws s3api put-public-access-block --bucket "$STATE_BUCKET" \
   BlockPublicAcls=true,IgnorePublicAcls=true,BlockPublicPolicy=true,RestrictPublicBuckets=true
 ```
 
-(New S3 buckets are encrypted with SSE-S3 by default. For a region other than `us-east-1`, add
-`--create-bucket-configuration LocationConstraint=<region>`.)
+(New S3 buckets are encrypted with SSE-S3 by default. `LocationConstraint` is required for every region
+except `us-east-1`.)
 
 ### 2.2 IAM role for GitHub Actions (OIDC, no long-lived keys)
 
@@ -156,7 +157,7 @@ cover dev/uat/prod, unless other workloads already use them.
 4. **Add the users** named in the `grant_principals` lists (**User management → Users**), if they don't
    exist yet.
 5. **Check for an existing metastore.** Go to **Catalog** in the account console. An account can have only one
-   metastore per region, so if one already exists in `us-east-1` the `metastore` stack will fail. Either:
+   metastore per region, so if one already exists in `us-east-2` the `metastore` stack will fail. Either:
    - **Use it:** skip the `metastore` stack, copy that metastore's ID for step 4, and make
      `DBX_Architect_Lab_Admin` its admin; or
    - **Replace it:** delete it (only if nothing uses it), then deploy the `metastore` stack.

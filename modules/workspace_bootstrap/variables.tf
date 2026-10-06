@@ -9,7 +9,7 @@ variable "databricks_host" {
 }
 
 variable "region" {
-  description = "AWS region for the S3 bucket and IAM role (e.g. us-east-1)"
+  description = "AWS region for the S3 bucket and IAM role (e.g. us-east-2)"
   type        = string
 }
 
