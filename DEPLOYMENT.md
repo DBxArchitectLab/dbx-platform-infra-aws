@@ -40,9 +40,10 @@ Edit and commit these before the first run.
 - [ ] **Region.** Everything defaults to `us-east-2`. To change it, update `region` in every
       `live/<env>/config.yaml`, `metastore.region` in `live/metastore/config.yaml`, `availability_zones`, and
       the PrivateLink service names (below). The metastore and all workspaces must be in the same region.
-- [ ] **PrivateLink (`private_link.enabled` in `live/<env>/config.yaml`).** On by default.
-      **Back-end PrivateLink requires the Databricks Enterprise tier.**
-      On a Premium account, set `enabled: false`; clusters then reach the control plane through the NAT gateway.
+- [ ] **PrivateLink (`private_link.enabled` in `live/<env>/config.yaml`).** Off, because the
+      Databricks account is on the Premium tier and **back-end PrivateLink requires the Enterprise tier**.
+      Clusters reach the control plane through the NAT gateway. After an upgrade to Enterprise, set
+      `enabled: true` to add the PrivateLink endpoints.
 - [ ] **PrivateLink endpoint service names.** `workspace_vpce_service` and `relay_vpce_service` are
       region-specific. Check the values against the Databricks table
       ("PrivateLink VPC endpoint services") at
@@ -238,9 +239,9 @@ Repeat 5.2 with the `uat-*` stacks, then the `prod-*` stacks.
 | `get_env` error for `DATABRICKS_*` | Secret missing in the GitHub environment the stack runs in |
 | Databricks `401` / `invalid_client` | Wrong `DATABRICKS_CLIENT_ID`/`SECRET`, or the secret expired (regenerate it in the account console) |
 | `databricks_mws_*` permission denied | Service principal isn't an account admin (step 3.2) |
-| Workspace creation fails with a PrivateLink / private access settings error | Account isn't on the Enterprise tier; set `private_link.enabled: false` |
+| `does not have one of required pricing tier(s) ENTERPRISE` (VPC endpoint / private access settings) | Account isn't on the Enterprise tier; set `private_link.enabled: false` |
 | VPC endpoint: "service not available in AZ" / service name not found | Wrong `*_vpce_service` for the region, or AZs not supported by the endpoint service |
-| `databricks_mws_credentials` fails validating the role | IAM propagation; re-run `apply` |
+| `databricks_mws_credentials`: `Failed credential validation checks` | On a first run, IAM propagation; re-run `apply`. If it fails again, an account guardrail (SCP) is probably blocking the EC2 actions Databricks dry-runs; test them with `aws ec2 run-instances --dry-run` |
 | External location validation fails (`AccessDenied` assuming role) | IAM propagation; re-run `apply`. If it persists, compare the role's trust policy with the storage credential's external ID |
 | Metastore create fails: region already has a metastore | See step 3.5 |
 | `BucketAlreadyExists` | Bucket names are global; change the `name_prefix` |
