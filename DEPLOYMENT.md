@@ -6,9 +6,9 @@ Actions workflow (`.github/workflows/terragrunt-deploy.yml`), or locally.
 Deployment order:
 
 ```
-0. Tools  →  1. Repo config  →  2. AWS prerequisites  →  3. Databricks account  →  4. GitHub setup
-                                                                                        │
-   5. Deploy:  metastore  →  dev-workspace  →  dev-workspace-bootstrap  →  (uat, prod)
+Before you begin (accounts)  →  0. Tools  →  1. Repo config  →  2. AWS prerequisites (CloudShell)
+                                                                                     │
+   3. Databricks account  →  4. GitHub setup  →  5. Deploy: metastore → dev-workspace → dev-workspace-bootstrap → (uat, prod)
 ```
 
 Values used throughout this guide (change them if yours differ):
@@ -24,11 +24,29 @@ Values used throughout this guide (change them if yours differ):
 
 ---
 
+## Before you begin: accounts
+
+1. **A paid AWS account.** Register a standard pay-as-you-go AWS account with a payment method. The AWS
+   free plan isn't enough: Databricks runs clusters on EC2 and is subscribed through AWS Marketplace, which a
+   free-plan account can't do. A dev environment also has fixed hourly costs (NAT gateway) on top of cluster usage.
+2. **A Databricks account on AWS.** Activate it via **AWS Marketplace** (search "Databricks Data Intelligence
+   Platform" → **Subscribe** → **Set up your account**) or at <https://www.databricks.com/try-databricks>, choosing
+   AWS. The person who activates it becomes the first **account admin**.
+   - During activation Databricks **creates a default workspace** (and usually a Unity Catalog metastore in its
+     region). This repo doesn't manage that workspace. You can keep it or delete it in the account console;
+     either way, check step 3.5 for the metastore.
+   - The tier matters: **Premium** works with this repo as configured; **Enterprise** is needed to turn on
+     PrivateLink (step 1).
+3. **If the AWS account belongs to an AWS Organization** (for example, one created by a team or sandbox
+   portal), the organization's guardrails (SCPs and RCPs) apply to it. A common data-perimeter RCP that denies
+   `sts:*`/`s3:*` to principals outside the organization blocks Databricks: its control plane (AWS account
+   `414351767826`) must assume IAM roles and read buckets in your account. See **Troubleshooting** for the fix.
+
 ## 0. Tools (for local runs and the one-time setup)
 
 | Tool | Version | Notes |
 | --- | --- | --- |
-| AWS CLI | v2 | For steps 2.x. `aws configure sso` or `aws configure` |
+| AWS CLI | v2 | For steps 2.x. Not needed if you use **AWS CloudShell** (recommended, see step 2) |
 | Terraform | ≥ 1.10 (CI uses 1.14.6) | 1.10+ is required for S3 native state locking (`use_lockfile`) |
 | Terragrunt | recent (CI uses 0.99.4) | Older releases (e.g. 0.63) don't support `use_lockfile` in `remote_state`; upgrade to match CI |
 | Databricks CLI | optional | Only for local runs as your own user (`databricks auth login`) |
@@ -60,6 +78,11 @@ Edit and commit these before the first run.
 ## 2. AWS prerequisites
 
 Run these as an AWS user/role with administrator access in the target account.
+
+**Recommended: AWS CloudShell.** Sign in to the AWS console, switch the region selector (top right) to
+**US East (Ohio) `us-east-2`**, and click the **CloudShell** icon (`>_`) in the top bar. CloudShell has the AWS
+CLI and `jq` installed and is already signed in as you, so there are no keys to set up. Paste the commands below
+into it. Alternatively, use the AWS CLI on your machine (step 0).
 
 ```bash
 export AWS_REGION="us-east-2"
@@ -150,11 +173,13 @@ cover dev/uat/prod, unless other workloads already use them.
 
 ## 3. Databricks account
 
-1. **Account and ID.** Sign in to the account console at <https://accounts.cloud.databricks.com> and copy the
-   account ID from the user menu (top right). If you don't have a Databricks-on-AWS account yet, create one
-   via AWS Marketplace or databricks.com. Check the plan: **Enterprise** is needed for PrivateLink (step 1).
-2. **Create a service principal for Terraform.** **User management → Service principals → Add service
-   principal**, e.g. `sp-dbx-platform-infra-aws`. Open it, then:
+1. **Account and ID.** Sign in to the account console at <https://accounts.cloud.databricks.com> as an account
+   admin and copy the account ID from the user menu (top right). If you don't have a Databricks-on-AWS account
+   yet, see **Before you begin**. Check the plan: **Enterprise** is needed for PrivateLink (step 1).
+2. **Create a service principal for Terraform.** This is a **Databricks** identity, created in the Databricks
+   account console, not an AWS IAM user or role. Terraform and GitHub Actions use its client ID and OAuth secret
+   for every Databricks API call. **User management → Service principals → Add service principal**, e.g.
+   `sp-dbx-platform-infra-aws`. Open it, then:
    - **Roles** tab → turn on **Account admin**.
    - **Secrets** tab → **Generate secret**. Copy the **client ID** and **secret** now; the secret is only
      shown once. These become `DATABRICKS_CLIENT_ID` and `DATABRICKS_CLIENT_SECRET`.
@@ -172,6 +197,32 @@ cover dev/uat/prod, unless other workloads already use them.
 The service principal creates the storage credential, external location and catalog in
 `workspace-bootstrap`, so it must be a metastore admin. Setting `metastore.owner` to
 `DBX_Architect_Lab_Admin`, with the service principal in that group, covers this.
+
+6. **(Optional) Check the service principal from CloudShell.** This confirms the client ID and secret work,
+   that the service principal is an account admin, lists existing metastores, and checks the group. It prompts
+   for the secret so it doesn't end up in your shell history:
+
+   ```bash
+   read -p  "Databricks account ID: " DBX_ACCOUNT_ID
+   read -p  "SP client ID: "          DBX_CLIENT_ID
+   read -sp "SP client secret: "      DBX_CLIENT_SECRET; echo
+   ACC="https://accounts.cloud.databricks.com"
+
+   TOKEN=$(curl -s -u "$DBX_CLIENT_ID:$DBX_CLIENT_SECRET" -d "grant_type=client_credentials&scope=all-apis" \
+     "$ACC/oidc/accounts/$DBX_ACCOUNT_ID/v1/token" | jq -r '.access_token // empty')
+   unset DBX_CLIENT_SECRET
+   [ -n "$TOKEN" ] && echo "OK: token issued" || echo "FAIL: check account ID / client ID / secret"
+
+   echo "== Metastores (PERMISSION_DENIED = SP isn't account admin)"
+   curl -s -H "Authorization: Bearer $TOKEN" "$ACC/api/2.0/accounts/$DBX_ACCOUNT_ID/metastores" \
+     | jq -r 'if (.metastores | length) > 0 then (.metastores[] | "\(.region)  \(.name)  \(.metastore_id)")
+              elif .error_code then "FAIL: \(.error_code) \(.message)" else "none" end'
+
+   echo "== Group DBX_Architect_Lab_Admin members"
+   curl -s -G -H "Authorization: Bearer $TOKEN" --data-urlencode 'filter=displayName eq "DBX_Architect_Lab_Admin"' \
+     "$ACC/api/2.0/accounts/$DBX_ACCOUNT_ID/scim/v2/Groups" \
+     | jq -r '.Resources[0] // empty | .members[]? | "  - \(.display)"'
+   ```
 
 ## 4. GitHub setup
 
@@ -211,7 +262,7 @@ environments. They share the metastore because they're in the same region.
 
 | Order | Stack | Creates |
 | --- | --- | --- |
-| 1 | `dev-dbxarchitectlab-workspace` | VPC, subnets, NAT gateway, security groups, S3/STS/Kinesis endpoints, PrivateLink endpoints and their Databricks registrations, cross-account IAM role, root bucket, workspace, metastore assignment, admin group assignment |
+| 1 | `dev-dbxarchitectlab-workspace` | VPC, subnets, NAT gateway, security groups, S3 gateway endpoint (plus STS/Kinesis and PrivateLink endpoints when `private_link.enabled`), cross-account IAM role, root bucket, workspace, metastore assignment, admin group assignment |
 | 2 | `dev-dbxarchitectlab-workspace-bootstrap` | Unity Catalog S3 bucket, IAM role, storage credential, external location, catalog, grants, cluster policies, secret scope |
 
 Workspace creation usually takes a few minutes. The `workspace-bootstrap` stack reads the workspace URL from
@@ -244,7 +295,7 @@ Repeat 5.2 with the `uat-*` stacks, then the `prod-*` stacks.
 | `databricks_mws_*` permission denied | Service principal isn't an account admin (step 3.2) |
 | `does not have one of required pricing tier(s) ENTERPRISE` (VPC endpoint / private access settings) | Account isn't on the Enterprise tier; set `private_link.enabled: false` |
 | VPC endpoint: "service not available in AZ" / service name not found | Wrong `*_vpce_service` for the region, or AZs not supported by the endpoint service |
-| `databricks_mws_credentials`: `Failed credential validation checks` | On a first run, IAM propagation; re-run `apply`. If it fails again, an account guardrail (SCP) is probably blocking the EC2 actions Databricks dry-runs; test them with `aws ec2 run-instances --dry-run` |
+| `databricks_mws_credentials`: `Failed credential validation checks` | On a first run, IAM propagation; re-run `apply`. If it fails again and the account is in an AWS Organization, an org guardrail is blocking Databricks (account `414351767826`) from assuming the role. Usually it's an RCP that denies `sts:*`/`s3:*` to principals outside the org. From the **management account**, add `"aws:PrincipalAccount": ["414351767826"]` to that statement's `StringNotEqualsIfExists` condition. Also check SCPs with `aws:RequestedRegion` denies; exempt `arn:aws:iam::<account-id>:role/dbx-architect-lab-*` with an `ArnNotLike` on `aws:PrincipalArn` (SCPs are limited to 5,120 characters; split the policy if needed). |
 | External location validation fails (`AccessDenied` assuming role) | IAM propagation; re-run `apply`. If it persists, compare the role's trust policy with the storage credential's external ID |
 | Metastore create fails: region already has a metastore | See step 3.5 |
 | `BucketAlreadyExists` | Bucket names are global; change the `name_prefix` |
