@@ -46,6 +46,20 @@ module "root_storage" {
   tags                  = var.tags
 }
 
+# Databricks deletes workspaces asynchronously: for a short time after the workspace is gone, the account API
+# still treats its network, storage and credential configurations as attached and refuses to delete them.
+# The workspace reads those IDs through this resource, so on destroy Terraform deletes the workspace, waits
+# here, and only then deletes the configurations. No delay on create.
+resource "time_sleep" "workspace_teardown" {
+  destroy_duration = "180s"
+
+  triggers = {
+    credentials_id           = module.cross_account_role.credentials_id
+    storage_configuration_id = module.root_storage.storage_configuration_id
+    network_id               = module.network.network_id
+  }
+}
+
 module "workspace" {
   source = "./modules/workspace"
 
@@ -56,9 +70,9 @@ module "workspace" {
   databricks_account_id      = var.databricks_account_id
   workspace_name             = var.workspace_name
   region                     = var.region
-  credentials_id             = module.cross_account_role.credentials_id
-  storage_configuration_id   = module.root_storage.storage_configuration_id
-  network_id                 = module.network.network_id
+  credentials_id             = time_sleep.workspace_teardown.triggers["credentials_id"]
+  storage_configuration_id   = time_sleep.workspace_teardown.triggers["storage_configuration_id"]
+  network_id                 = time_sleep.workspace_teardown.triggers["network_id"]
   private_access_settings_id = module.network.private_access_settings_id
   tags                       = var.tags
 }

@@ -30,6 +30,8 @@ Scripts never contain secrets. They look up IDs with `aws sts get-caller-identit
 - [8. Can't open the workspace: admin group membership](#8-cant-open-the-workspace-admin-group-membership)
 - [9. Dev catalog visible in the uat workspace](#9-dev-catalog-visible-in-the-uat-workspace)
 - [10. Cost hygiene while troubleshooting](#10-cost-hygiene-while-troubleshooting)
+- [11. Destroy: `Catalog ... is not accessible in current workspace`](#11-destroy-catalog-is-not-accessible-in-current-workspace)
+- [12. Destroy: `Cannot delete a network/StorageConfiguration while it is attached to a workspace`](#12-destroy-cannot-delete-a-networkstorageconfiguration-while-it-is-attached-to-a-workspace)
 - [Lessons learned](#lessons-learned)
 
 ---
@@ -44,7 +46,9 @@ Scripts never contain secrets. They look up IDs with `aws sts get-caller-identit
 | 4 | `does not have one of required pricing tier(s) ENTERPRISE` | Back-end PrivateLink needs the Databricks Enterprise tier; the account is Premium | `private_link.enabled: false`; clusters go out through the NAT gateway | [6](#6-enterprise-pricing-tier-required-privatelink) |
 | 5 | `cannot create mws credentials: Failed credential validation checks` | The org's **RCP** denies `sts:*`/`s3:*` to principals outside the org, so Databricks (AWS account `414351767826`) can't assume the cross-account role | Exempt `414351767826` in the RCP (management account) | [7](#7-failed-credential-validation-checks-org-guardrails) |
 | 6 | Workspace created but the user can't open it | The user wasn't in `DBX_Architect_Lab_Admin`, which is the group granted workspace ADMIN | Add the user to the group with an account SCIM API call | [8](#8-cant-open-the-workspace-admin-group-membership) |
-| 7 | `dbxarchitectlab_dev` shows up in the uat workspace | Catalogs are metastore-level and visible in every attached workspace by default | Bootstrap marks the catalog, external location and credential `ISOLATED` and binds each to its own workspace | [9](#9-dev-catalog-visible-in-the-uat-workspace) |
+| 7 | `dbxarchitectlab_dev` shows up in the uat workspace | Catalogs are metastore-level and visible in every attached workspace by default | Bootstrap marks the catalog, external location and credential `ISOLATED` (bound to the environment's own workspace) | [9](#9-dev-catalog-visible-in-the-uat-workspace) |
+| 8 | uat bootstrap destroy: `Catalog 'dbxarchitectlab_uat' is not accessible in current workspace` | The explicit workspace-binding resource was destroyed before the catalog, cutting off Terraform's access | Re-bind with the bindings API; replace the binding resources with `removed` blocks; `apply`, then `destroy` | [11](#11-destroy-catalog-is-not-accessible-in-current-workspace) |
+| 9 | dev workspace destroy: `Cannot delete a network/StorageConfiguration while it is attached to a workspace` | Workspace deletion is asynchronous; the configurations were deleted too soon after it | Re-run `destroy`; code now waits 180 s after deleting the workspace | [12](#12-destroy-cannot-delete-a-networkstorageconfiguration-while-it-is-attached-to-a-workspace) |
 
 ---
 
@@ -678,20 +682,23 @@ minute or two to take effect.
 **one Unity Catalog metastore**, and catalogs, external locations and storage credentials are visible in every
 attached workspace unless they're bound to specific ones.
 
-**Fix (in code).** `workspace-bootstrap` now isolates each environment's objects and binds them to its own
-workspace (`workspace_id` comes from the workspace stack's output):
+**Fix (in code).** `workspace-bootstrap` now isolates each environment's objects. Setting isolation binds the object
+automatically to the workspace the provider points at, which is the environment's own:
 
 | Resource | Setting |
 | --- | --- |
-| `databricks_catalog` | `isolation_mode = "ISOLATED"` + `databricks_workspace_binding` (`catalog`) |
-| `databricks_storage_credential` | `isolation_mode = "ISOLATION_MODE_ISOLATED"` + binding (`storage_credential`) |
-| `databricks_external_location` | `isolation_mode = "ISOLATION_MODE_ISOLATED"` + binding (`external_location`) |
+| `databricks_catalog` | `isolation_mode = "ISOLATED"` |
+| `databricks_storage_credential` | `isolation_mode = "ISOLATION_MODE_ISOLATED"` |
+| `databricks_external_location` | `isolation_mode = "ISOLATION_MODE_ISOLATED"` |
 
 Catalogs use `ISOLATED`/`OPEN`; credentials and locations use `ISOLATION_MODE_ISOLATED`/`ISOLATION_MODE_OPEN`.
 
+The first version also managed explicit `databricks_workspace_binding` resources, which broke `destroy`
+([section 11](#11-destroy-catalog-is-not-accessible-in-current-workspace)). They were replaced with `removed`
+blocks, so Terraform forgets them without unbinding anything.
+
 **Rollout:** re-apply dev bootstrap first, so the dev catalog disappears from uat, then uat, then prod. The plan
-should show **in-place updates plus 3 new bindings, and no replacements**. Stop if a catalog shows as
-destroy/create.
+should show **in-place updates and no replacements**. Stop if a catalog shows as destroy/create.
 
 **Check** in each workspace (**Catalog** explorer or a SQL editor):
 
@@ -725,6 +732,109 @@ aws ec2 describe-instances --region us-east-2 --filters "Name=instance-state-nam
 
 ---
 
+## 11. Destroy: `Catalog ... is not accessible in current workspace`
+
+**Symptom** (⬛ `uat-dbxarchitectlab-workspace-bootstrap` destroy):
+
+```
+module.unity_catalog.databricks_catalog.default: Refreshing state... [id=dbxarchitectlab_uat]
+Error: cannot read catalog: Catalog 'dbxarchitectlab_uat' is not accessible in current workspace
+```
+
+It looks like the catalog was deleted outside Terraform, but it wasn't: a deleted catalog returns
+"does not exist", and Terraform simply drops it from state.
+
+**Root cause.** The catalog is `ISOLATED`, so only bound workspaces can see it. The first version of the code
+managed the uat binding as a separate `databricks_workspace_binding` resource that depended on the catalog. On
+`destroy`, Terraform deletes dependents first, so it **removed the binding before the catalog**. That cut off the
+uat workspace (the one Terraform connects through), and Terraform could no longer read or delete the catalog.
+
+**Recover the stuck environment** (🟦 Any CloudShell): re-bind the catalog through the Unity Catalog bindings API,
+as the service principal (a metastore admin):
+
+```bash
+read -p  "Databricks account ID: " DBX_ACCOUNT_ID
+read -p  "SP client ID: "          DBX_CLIENT_ID
+read -sp "SP client secret: "      DBX_CLIENT_SECRET; echo
+ENV=uat
+CATALOG="dbxarchitectlab_${ENV}"
+TARGET_WS="dbw-dbx-architect-lab-${ENV}"   # workspace the catalog must be bound to
+CALL_VIA_WS="$TARGET_WS"                   # workspace used to call the API (use another env's if this one is refused)
+
+ACC="https://accounts.cloud.databricks.com"
+ACC_TOKEN=$(curl -s -u "$DBX_CLIENT_ID:$DBX_CLIENT_SECRET" -d "grant_type=client_credentials&scope=all-apis" \
+  "$ACC/oidc/accounts/$DBX_ACCOUNT_ID/v1/token" | jq -r .access_token)
+WS_LIST=$(curl -s -H "Authorization: Bearer $ACC_TOKEN" "$ACC/api/2.0/accounts/$DBX_ACCOUNT_ID/workspaces")
+TARGET_ID=$(echo "$WS_LIST" | jq -r --arg n "$TARGET_WS" '.[] | select(.workspace_name==$n) | .workspace_id')
+HOST="https://$(echo "$WS_LIST" | jq -r --arg n "$CALL_VIA_WS" '.[] | select(.workspace_name==$n) | .deployment_name').cloud.databricks.com"
+
+WS_TOKEN=$(curl -s -u "$DBX_CLIENT_ID:$DBX_CLIENT_SECRET" -d "grant_type=client_credentials&scope=all-apis" \
+  "$HOST/oidc/v1/token" | jq -r .access_token)
+unset DBX_CLIENT_SECRET
+H=(-H "Authorization: Bearer $WS_TOKEN" -H "Content-Type: application/json")
+
+curl -s "${H[@]}" "$HOST/api/2.1/unity-catalog/bindings/catalog/$CATALOG" | jq .            # current bindings
+curl -s "${H[@]}" -X PATCH "$HOST/api/2.1/unity-catalog/bindings/catalog/$CATALOG" \
+  -d "{\"add\": [{\"workspace_id\": $TARGET_ID, \"binding_type\": \"BINDING_TYPE_READ_WRITE\"}]}" | jq .
+curl -s "${H[@]}" "$HOST/api/2.1/unity-catalog/catalogs/$CATALOG" \
+  | jq '{name, isolation_mode, owner, error_code, message}'                                 # readable now?
+```
+
+**Fix (in code).** Setting isolation already binds the object to the workspace the provider points at, so the
+explicit binding resources were removed. To keep existing environments from being unbound, they're forgotten
+instead of destroyed:
+
+```hcl
+removed {
+  from = databricks_workspace_binding.catalog
+
+  lifecycle {
+    destroy = false
+  }
+}
+```
+
+The same applies to `storage_credential` and `external_location`. After re-binding, run the bootstrap stack's
+**`apply` first** (Terraform forgets the bindings; the plan says *will no longer be managed*), then
+**`destroy`**. Run `apply` once on every other environment's bootstrap stack too, so its state is cleaned up.
+
+---
+
+## 12. Destroy: `Cannot delete a network/StorageConfiguration while it is attached to a workspace`
+
+**Symptom** (⬛ `dev-dbxarchitectlab-workspace` destroy; uat and prod succeeded):
+
+```
+Error: cannot delete mws storage configurations: MALFORMED_REQUEST: Cannot delete a StorageConfiguration while it is attached to a workspace (7474647749578147)
+Error: cannot delete mws networks: MALFORMED_REQUEST: Cannot delete a network while it is attached to a workspace (7474647749578147)
+```
+
+**Root cause.** Databricks deletes workspaces **asynchronously**. Right after Terraform deletes the workspace, the
+account API still counts it as attached to its network and storage configurations for a short while, so deleting
+them immediately fails. It's a race: uat and prod happened to win it.
+
+**Recover.** Check the workspace is gone or going, then re-run `destroy`; only the remaining resources (network
+and storage configurations, root bucket, VPC, NAT gateway) are left:
+
+```bash
+read -p  "Databricks account ID: " A; read -p "SP client ID: " C; read -sp "SP client secret: " S; echo
+T=$(curl -s -u "$C:$S" -d "grant_type=client_credentials&scope=all-apis" \
+  "https://accounts.cloud.databricks.com/oidc/accounts/$A/v1/token" | jq -r .access_token); unset S
+curl -s -H "Authorization: Bearer $T" "https://accounts.cloud.databricks.com/api/2.0/accounts/$A/workspaces/<workspace-id>" \
+  | jq '{workspace_name, workspace_status, workspace_status_message, error_code, message}'
+# RESOURCE_DOES_NOT_EXIST or DELETING -> wait a few minutes, then re-run destroy
+# RUNNING -> the workspace wasn't deleted; investigate before going further
+```
+
+Until the re-run finishes, the half-destroyed stack still has a running NAT gateway, so don't leave it
+([section 10](#10-cost-hygiene-while-troubleshooting)).
+
+**Fix (in code).** `modules/dbx_workspace_private/main.tf` passes the credential, storage and network IDs to the
+workspace through a `time_sleep` with `destroy_duration = "180s"`. On destroy, Terraform deletes the workspace,
+waits 3 minutes, then deletes the configurations. On create there's no delay.
+
+---
+
 ## Lessons learned
 
 1. **Read the error's source before changing code.** `AssumeRoleWithWebIdentity` is a trust-policy problem,
@@ -742,3 +852,6 @@ aws ec2 describe-instances --region us-east-2 --filters "Name=instance-state-nam
 6. **SCPs are limited to 5,120 characters.** Check the size with `jq -c . | wc -c` before `update-policy`, and
    always keep a backup copy for rollback.
 7. **Destroy before you walk away** when a deployment is half-applied; NAT gateways bill by the hour.
+8. **Test `destroy` as well as `apply`.** Both destroy failures were ordering problems: one resource removed the
+   access that deleting the next one needed, and an asynchronous delete raced the next step. Neither shows up
+   during `apply`.
