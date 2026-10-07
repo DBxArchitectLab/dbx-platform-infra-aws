@@ -10,11 +10,6 @@ variable "external_location_owner" {
   default     = null
 }
 
-variable "workspace_id" {
-  description = "ID of the workspace the storage credential and external location are bound to"
-  type        = number
-}
-
 variable "bucket_name" {
   description = "S3 bucket used as the external location root"
   type        = string

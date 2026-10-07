@@ -1,4 +1,6 @@
 name: Terragrunt Deploy Stacks
+# Shown in the Actions run list, e.g. "plan dev-dbxarchitectlab-workspace by @user".
+run-name: ${{ inputs.action }} ${{ inputs.stack }} by @${{ github.actor }}
 
 on:
   workflow_dispatch:
@@ -51,15 +53,6 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Debug OIDC claims (temporary)
-        shell: bash
-        run: |
-          TOKEN=$(curl -s -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
-            "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=sts.amazonaws.com" | jq -r .value)
-          PAYLOAD=$(echo "$TOKEN" | cut -d. -f2 | tr '_-' '/+')
-          while [ $(( ${#PAYLOAD} % 4 )) -ne 0 ]; do PAYLOAD="$PAYLOAD="; done
-          echo "$PAYLOAD" | base64 -d | jq '{sub, aud, repository, environment}'
-
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -98,14 +91,52 @@ jobs:
             *) echo "Unsupported stack: ${{ inputs.stack }}"; exit 1 ;;
           esac
 
-      - name: Debug runtime identity
+      - name: Deployment selection
         shell: bash
+        env:
+          STACK: ${{ inputs.stack }}
+          ACTION: ${{ inputs.action }}
+          STACK_PATH: ${{ steps.stack.outputs.path }}
+          GH_ENVIRONMENT: ${{ startsWith(inputs.stack, 'prod-') && 'prod' || startsWith(inputs.stack, 'uat-') && 'uat' || 'dev' }}
         run: |
           set -euo pipefail
-          echo "Selected stack path: ${{ steps.stack.outputs.path }}"
-          echo "Workflow ref: ${GITHUB_REF}"
-          echo "DATABRICKS_CLIENT_ID=${DATABRICKS_CLIENT_ID}"
-          aws sts get-caller-identity --output json
+          case "$ACTION" in
+            apply)   NOTE="changes infrastructure, auto-approved" ;;
+            destroy) NOTE="DELETES the stack's resources, auto-approved" ;;
+            *)       NOTE="read-only" ;;
+          esac
+
+          echo "::group::Deployment selection"
+          printf '%-18s %s\n' \
+            "Stack:"            "$STACK" \
+            "Action:"           "$ACTION ($NOTE)" \
+            "Path:"             "$STACK_PATH" \
+            "GitHub env:"       "$GH_ENVIRONMENT" \
+            "AWS region:"       "$AWS_REGION" \
+            "Branch:"           "$GITHUB_REF_NAME" \
+            "Commit:"           "${GITHUB_SHA:0:7}" \
+            "Triggered by:"     "$GITHUB_ACTOR" \
+            "Terraform:"        "$(terraform version | head -1)" \
+            "Terragrunt:"       "$(terragrunt --version | head -1)"
+          echo "::endgroup::"
+
+          if [ "$ACTION" = "destroy" ]; then
+            echo "::warning title=Destroy::$STACK will be destroyed ($STACK_PATH)"
+          fi
+
+          {
+            echo "## Deployment selection"
+            echo
+            echo "| Setting | Value |"
+            echo "| --- | --- |"
+            echo "| Stack | \`$STACK\` |"
+            echo "| Action | **$ACTION** ($NOTE) |"
+            echo "| Path | \`$STACK_PATH\` |"
+            echo "| GitHub environment | \`$GH_ENVIRONMENT\` |"
+            echo "| AWS region | \`$AWS_REGION\` |"
+            echo "| Branch / commit | \`$GITHUB_REF_NAME\` @ [\`${GITHUB_SHA:0:7}\`]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/commit/$GITHUB_SHA) |"
+            echo "| Triggered by | @$GITHUB_ACTOR |"
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Terragrunt init
         working-directory: ${{ steps.stack.outputs.path }}
@@ -114,47 +145,23 @@ jobs:
           set -o pipefail
           terragrunt init -upgrade 2>&1 | tee terragrunt-init.log
 
-      - name: Terragrunt validate
-        if: ${{ inputs.action == 'validate' }}
+      - name: Terragrunt ${{ inputs.action }}
         working-directory: ${{ steps.stack.outputs.path }}
         shell: bash
         run: |
           set -o pipefail
-          terragrunt validate -no-color 2>&1 | tee terragrunt-validate.log
-
-      - name: Terragrunt plan
-        if: ${{ inputs.action == 'plan' }}
-        working-directory: ${{ steps.stack.outputs.path }}
-        shell: bash
-        run: |
-          set -o pipefail
-          terragrunt plan -no-color 2>&1 | tee terragrunt-plan.log
-
-      - name: Terragrunt apply
-        if: ${{ inputs.action == 'apply' }}
-        working-directory: ${{ steps.stack.outputs.path }}
-        shell: bash
-        run: |
-          set -o pipefail
-          terragrunt apply -auto-approve -no-color 2>&1 | tee terragrunt-apply.log
-
-      - name: Terragrunt destroy
-        if: ${{ inputs.action == 'destroy' }}
-        working-directory: ${{ steps.stack.outputs.path }}
-        shell: bash
-        run: |
-          set -o pipefail
-          terragrunt destroy -auto-approve -no-color 2>&1 | tee terragrunt-destroy.log
+          case "${{ inputs.action }}" in
+            validate) ARGS=(validate -no-color) ;;
+            plan)     ARGS=(plan -no-color) ;;
+            apply)    ARGS=(apply -auto-approve -no-color) ;;
+            destroy)  ARGS=(destroy -auto-approve -no-color) ;;
+          esac
+          terragrunt "${ARGS[@]}" 2>&1 | tee "terragrunt-${{ inputs.action }}.log"
 
       - name: Upload Terragrunt logs
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: terragrunt-logs-${{ inputs.stack }}-${{ github.run_id }}
-          path: |
-            ${{ steps.stack.outputs.path }}/terragrunt-init.log
-            ${{ steps.stack.outputs.path }}/terragrunt-validate.log
-            ${{ steps.stack.outputs.path }}/terragrunt-plan.log
-            ${{ steps.stack.outputs.path }}/terragrunt-apply.log
-            ${{ steps.stack.outputs.path }}/terragrunt-destroy.log
+          path: ${{ steps.stack.outputs.path }}/terragrunt-*.log
           if-no-files-found: ignore

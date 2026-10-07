@@ -9,15 +9,19 @@ resource "databricks_catalog" "default" {
   storage_root = local.catalog_storage_root
 
   # The metastore is shared by dev/uat/prod; without isolation the catalog shows up in every workspace.
+  # ISOLATED automatically binds it to the workspace the provider points at (this environment's), so no
+  # separate databricks_workspace_binding is needed. A managed binding would also be destroyed before the
+  # catalog, cutting off the access needed to delete it.
   isolation_mode = "ISOLATED"
 }
 
-# Bind the catalog to this environment's workspace only.
-resource "databricks_workspace_binding" "catalog" {
-  securable_name = databricks_catalog.default.name
-  securable_type = "catalog"
-  workspace_id   = var.workspace_id
-  binding_type   = "BINDING_TYPE_READ_WRITE"
+# Earlier versions managed the binding explicitly. Forget it without unbinding the workspace.
+removed {
+  from = databricks_workspace_binding.catalog
+
+  lifecycle {
+    destroy = false
+  }
 }
 
 resource "databricks_grants" "catalog" {
