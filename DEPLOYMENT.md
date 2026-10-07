@@ -84,6 +84,19 @@ Run these as an AWS user/role with administrator access in the target account.
 CLI and `jq` installed and is already signed in as you, so there are no keys to set up. Paste the commands below
 into it. Alternatively, use the AWS CLI on your machine (step 0).
 
+**Shortcut:** `scripts/setup-aws-prerequisites.sh` does all of step 2 (state bucket, OIDC provider, GitHub role)
+idempotently, and `scripts/preflight-check.sh` then checks AWS, the org guardrails, the repo config and the
+Databricks account. To get them into CloudShell, either upload them (**Actions → Upload file**) or clone the
+repo (`git clone https://github.com/DBxArchitectLab/dbx-platform-infra-aws.git`; a private repo needs a GitHub
+token as the password), then run:
+
+```bash
+bash scripts/setup-aws-prerequisites.sh            # DRY_RUN=true to preview
+bash scripts/preflight-check.sh                    # read-only; prompts for Databricks SP credentials
+```
+
+The manual equivalent:
+
 ```bash
 export AWS_REGION="us-east-2"
 ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
@@ -285,6 +298,9 @@ Repeat 5.2 with the `uat-*` stacks, then the `prod-*` stacks.
 - Start a small cluster to confirm the network path (NAT and/or PrivateLink) to the control plane works.
 
 ## Troubleshooting
+
+For the full runbook (every issue hit during the first deployment, with diagnosis scripts, fixes and rollback
+steps), see [TROUBLESHOOTING.md](TROUBLESHOOTING.md).
 
 | Symptom | Likely cause |
 | --- | --- |

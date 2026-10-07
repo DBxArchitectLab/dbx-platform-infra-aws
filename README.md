@@ -54,7 +54,10 @@ This repository provisions Databricks workspaces on AWS with:
 
 ## Prerequisites
 
-See [DEPLOYMENT.md](DEPLOYMENT.md) for the full setup and deployment steps. In short:
+See [DEPLOYMENT.md](DEPLOYMENT.md) for the full setup and deployment steps, and
+[TROUBLESHOOTING.md](TROUBLESHOOTING.md) for diagnosis scripts and fixes for known issues.
+`scripts/setup-aws-prerequisites.sh` creates the AWS prerequisites and `scripts/preflight-check.sh` checks the
+whole setup. In short:
 
 - AWS account with an S3 bucket `dbx-architect-lab-tfstate-<aws-account-id>` (us-east-2) for Terraform state
 - IAM role trusted by GitHub OIDC for this repo's `dev`/`uat`/`prod` environments
