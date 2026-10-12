@@ -36,6 +36,11 @@ inputs = merge(
   local.env.inputs,
   {
     databricks_host = dependency.workspace.outputs.workspace_url
+    workspace_id    = dependency.workspace.outputs.workspace_id
+
+    # Expected values for the validation notebook (empty metastore ID skips that check).
+    metastore_id              = get_env("DATABRICKS_METASTORE_ID", "")
+    platform_admin_group_name = local.config.identity.platform_admin_group_name
 
     region = local.config.region
 

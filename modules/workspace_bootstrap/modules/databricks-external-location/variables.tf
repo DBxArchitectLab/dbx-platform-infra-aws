@@ -57,3 +57,9 @@ variable "tags" {
   type        = map(string)
   default     = {}
 }
+
+variable "force_destroy" {
+  description = "Allow Terraform to delete the external location even if Unity Catalog still lists dependents"
+  type        = bool
+  default     = false
+}

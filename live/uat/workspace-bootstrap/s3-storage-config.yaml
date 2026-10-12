@@ -2,4 +2,7 @@
 # The AWS account ID is appended to keep the name globally unique.
 bucket:
   name_prefix: "dbx-architect-lab-uat-uc"
+  # Delete the bucket even if it still contains objects, and the catalog and external location even if they still
+  # have contents or dependents (for example the dropped test table the validation notebook leaves behind,
+  # restorable for 7 days).
   force_destroy: true

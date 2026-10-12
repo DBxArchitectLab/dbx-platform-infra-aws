@@ -14,6 +14,12 @@ variable "catalog_managed_prefix" {
   default     = "managed"
 }
 
+variable "force_destroy" {
+  description = "Allow Terraform to delete the catalog even if it still contains schemas and tables"
+  type        = bool
+  default     = false
+}
+
 variable "enable_catalog_grants" {
   description = "If true, grants Unity Catalog privileges on the catalog to catalog_grant_principals (needed for visibility in Data Explorer)."
   type        = bool
