@@ -301,7 +301,7 @@ To run it in each environment's workspace:
 1. Sign in as a member of `DBX_Architect_Lab_Admin`.
 2. Open **Workspace → Shared → platform → workspace-bootstrap-validation**.
 3. Attach a Unity Catalog-enabled compute: serverless, or a cluster in standard/shared or dedicated/single-user
-   access mode. A classic cluster also tests the workspace network (S3 gateway endpoint, NAT gateway); serverless tests Databricks' serverless network instead.
+   access mode. A classic cluster also tests the workspace network (S3 gateway endpoint, NAT gateway); serverless tests Databricks' serverless network instead, and is subject to the account's serverless network policy: if that policy blocks the Unity Catalog bucket, the storage write tests report WARN and are skipped (see Troubleshooting).
 4. **Run all**. Each cell has a title naming what it validates. The last cell, **Validation summary**, shows every
    check and fails the notebook if any check failed, so it can also run as a job.
 
@@ -352,6 +352,7 @@ steps), see [TROUBLESHOOTING.md](TROUBLESHOOTING.md).
 | `BucketAlreadyExists` | Bucket names are global; change the `name_prefix` |
 | Permission denied creating catalog / external location | Service principal isn't a metastore admin (step 3) |
 | Workspace group assignment fails: group not found | `DBX_Architect_Lab_Admin` doesn't exist in the account (step 3.3) |
+| Validation notebook WARN: `blocked by the account's serverless network policy` | The notebook ran on serverless compute and the account's serverless egress policy is in restricted mode. External locations bound to the workspace are allowed automatically, but a new binding can take up to 24 hours to reach the policy. Run the notebook on a classic cluster, or add the bucket to the policy's allowed storage destinations (account console > Security > Networking > Network policies) |
 | Destroy: `cannot delete external location: ... because the location has ... dependent managed tables` | A dropped managed table (for example from the validation notebook's write test) stays restorable for up to 7 days and still counts as a dependent. The catalog and external location use `force_destroy`, following `bucket.force_destroy` in `s3-storage-config.yaml`. `destroy` reads that setting from state, so a stack deployed before the validation notebook was added must run `apply` once, then `destroy` |
 
 ## Running locally instead

@@ -76,14 +76,36 @@ def record(section, name, status, detail=""):
     print(f"[{status:<4}] {name}" + (f": {detail}" if detail != "" else ""))
 
 
+# Serverless compute is subject to the account's serverless network policy (egress control). A policy that blocks the
+# Unity Catalog bucket is account configuration, not a bootstrap defect: it is reported as WARN, and the rest of that
+# section is skipped instead of failing one step after another.
+NETWORK_POLICY_HINT = (
+    "blocked by the account's serverless network policy, not by Unity Catalog permissions. Run the notebook on a "
+    "classic cluster to test the workspace network, or allow the S3 bucket in the policy (account console > "
+    "Security > Networking > Network policies). A new workspace binding can take up to 24 hours to reach the policy; "
+    "adding the bucket explicitly takes effect within minutes.")
+policy_blocked_sections = set()
+
+
+def is_network_policy_denial(error):
+    return "serverless network policy" in str(error).lower()
+
+
 def check(section, name, fn):
-    """fn() returns (ok, detail). An exception counts as FAIL."""
+    """fn() returns (ok, detail). An exception counts as FAIL, except a serverless network policy denial (WARN)."""
+    if section in policy_blocked_sections:
+        record(section, name, "SKIP", "skipped: the serverless network policy blocked storage access in this section")
+        return False
     try:
         ok, detail = fn()
         record(section, name, "PASS" if ok else "FAIL", detail)
         return ok
     except Exception as e:  # noqa: BLE001 - report any API error as a failed check
-        record(section, name, "FAIL", f"{type(e).__name__}: {e}")
+        if is_network_policy_denial(e):
+            policy_blocked_sections.add(section)
+            record(section, name, "WARN", NETWORK_POLICY_HINT)
+        else:
+            record(section, name, "FAIL", f"{type(e).__name__}: {str(e).splitlines()[0][:500]}")
         return False
 
 
@@ -391,6 +413,9 @@ counts = Counter(r["status"] for r in results)
 print("  ".join(f"{status}: {counts.get(status, 0)}" for status in ["PASS", "FAIL", "WARN", "SKIP", "INFO"]))
 
 display(spark.createDataFrame(results, "section string, check string, status string, detail string"))
+
+if policy_blocked_sections:
+    print(f"Serverless network policy blocked storage access in: {sorted(policy_blocked_sections)}. {NETWORK_POLICY_HINT}")
 
 failures = [r for r in results if r["status"] == "FAIL"]
 if failures:
