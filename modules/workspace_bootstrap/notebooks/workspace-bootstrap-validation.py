@@ -80,10 +80,11 @@ def record(section, name, status, detail=""):
 # Unity Catalog bucket is account configuration, not a bootstrap defect: it is reported as WARN, and the rest of that
 # section is skipped instead of failing one step after another.
 NETWORK_POLICY_HINT = (
-    "blocked by the account's serverless network policy, not by Unity Catalog permissions. Run the notebook on a "
-    "classic cluster to test the workspace network, or allow the S3 bucket in the policy (account console > "
-    "Security > Networking > Network policies). A new workspace binding can take up to 24 hours to reach the policy; "
-    "adding the bucket explicitly takes effect within minutes.")
+    "blocked by the account's serverless network policy, not by Unity Catalog permissions. A new workspace binding can "
+    "take up to 24 hours to reach serverless compute: run the notebook on a classic cluster to test the workspace "
+    "network now, or re-run on serverless later. On the Enterprise tier you can also allow the S3 bucket in the "
+    "policy (account console > Security > Networking > Context-based ingress & egress control), which takes effect "
+    "within minutes.")
 policy_blocked_sections = set()
 
 
