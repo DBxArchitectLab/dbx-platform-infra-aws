@@ -51,3 +51,8 @@ output "unity_catalog_storage_credential_name" {
 output "secret_scope_name" {
   value = module.secret_scope.secret_scope_name
 }
+
+output "validation_notebook_path" {
+  description = "Workspace path of the bootstrap validation notebook"
+  value       = databricks_notebook.bootstrap_validation.path
+}

@@ -276,7 +276,7 @@ environments. They share the metastore because they're in the same region.
 | Order | Stack | Creates |
 | --- | --- | --- |
 | 1 | `dev-dbxarchitectlab-workspace` | VPC, subnets, NAT gateway, security groups, S3 gateway endpoint (plus STS/Kinesis and PrivateLink endpoints when `private_link.enabled`), cross-account IAM role, root bucket, workspace, metastore assignment, admin group assignment |
-| 2 | `dev-dbxarchitectlab-workspace-bootstrap` | Unity Catalog S3 bucket, IAM role, storage credential, external location, catalog, grants, cluster policies, secret scope |
+| 2 | `dev-dbxarchitectlab-workspace-bootstrap` | Unity Catalog S3 bucket, IAM role, storage credential, external location, catalog, grants, cluster policies, secret scope, validation notebook |
 
 Workspace creation usually takes a few minutes. The `workspace-bootstrap` stack reads the workspace URL from
 the `workspace` stack's state, so it must be applied afterwards.
@@ -286,6 +286,41 @@ the `workspace` stack's state, so it must be applied afterwards.
 Repeat 5.2 with the `uat-*` stacks, then the `prod-*` stacks.
 
 ## 6. Verify
+
+### Validation notebook
+
+The bootstrap stack deploys the same validation notebook to every workspace:
+`/Shared/platform/workspace-bootstrap-validation` (source:
+`modules/workspace_bootstrap/notebooks/workspace-bootstrap-validation.py`). Next to it,
+`/Shared/platform/workspace-bootstrap-validation.json` holds that environment's expected values (catalog, storage
+root, external location, storage credential and its IAM role, grants, cluster policies, secret scope, metastore ID,
+admin group), written from the same inputs that provisioned them.
+
+To run it in each environment's workspace:
+
+1. Sign in as a member of `DBX_Architect_Lab_Admin`.
+2. Open **Workspace → Shared → platform → workspace-bootstrap-validation**.
+3. Attach a Unity Catalog-enabled compute: serverless, or a cluster in standard/shared or dedicated/single-user
+   access mode. A classic cluster also tests the workspace network (S3 gateway endpoint, NAT gateway); serverless tests Databricks' serverless network instead, and is subject to the account's serverless network policy: if that policy blocks the Unity Catalog bucket, the storage write tests report WARN and are skipped (see Troubleshooting).
+4. **Run all**. Each cell has a title naming what it validates. The last cell, **Validation summary**, shows every
+   check and fails the notebook if any check failed, so it can also run as a job.
+
+| Widget | Default | Purpose |
+| --- | --- | --- |
+| `config_path` | `/Workspace/Shared/platform/workspace-bootstrap-validation.json` | Expected values for this environment |
+| `run_write_tests` | `true` | `false` for a read-only run: skips writing a file to storage and creating a temporary schema and table |
+
+Write tests only create temporary objects and remove them in the same cell: a file under
+`s3://<uc-bucket>/_bootstrap_validation/` and a `bootstrap_validation_<id>` schema in the environment's catalog.
+Unity Catalog keeps the dropped test table restorable (UNDROP) for up to 7 days, during which it still counts as a
+dependent of the external location; the bootstrap stack deletes the catalog and external location with
+`force_destroy` (from `bucket.force_destroy` in `s3-storage-config.yaml`), so it doesn't block a destroy. On destroy, Terraform deletes the notebook
+and its JSON file before the objects they describe.
+
+Statuses: **PASS**; **FAIL** (fix needed; see the check's detail and **Troubleshooting**); **WARN** (no public internet from the driver, expected only if the NAT gateway is disabled);
+**SKIP** (check disabled by config or widget); **INFO** (context, such as the running user and runtime).
+
+### Manual checks
 
 - Account console → **Workspaces**: the workspace is **Running**; open its URL.
 - **Catalog:** the catalog from `catalog-config.yaml` is listed. Each environment's catalog, external location
@@ -317,6 +352,8 @@ steps), see [TROUBLESHOOTING.md](TROUBLESHOOTING.md).
 | `BucketAlreadyExists` | Bucket names are global; change the `name_prefix` |
 | Permission denied creating catalog / external location | Service principal isn't a metastore admin (step 3) |
 | Workspace group assignment fails: group not found | `DBX_Architect_Lab_Admin` doesn't exist in the account (step 3.3) |
+| Validation notebook WARN: `blocked by the account's serverless network policy` | The notebook ran on serverless compute. External locations bound to the workspace are allowed for serverless automatically, but a new binding can take up to 24 hours to reach serverless compute. Run the notebook on a classic cluster (it tests the network this repo builds), or re-run on serverless later. On the Enterprise tier you can also add the bucket to the network policy's allowed storage destinations (account console > Security > Networking > Context-based ingress & egress control); that option doesn't exist on Premium |
+| Destroy: `cannot delete external location: ... because the location has ... dependent managed tables` | A dropped managed table (for example from the validation notebook's write test) stays restorable for up to 7 days and still counts as a dependent. The catalog and external location use `force_destroy`, following `bucket.force_destroy` in `s3-storage-config.yaml`. `destroy` reads that setting from state, so a stack deployed before the validation notebook was added must run `apply` once, then `destroy` |
 
 ## Running locally instead
 

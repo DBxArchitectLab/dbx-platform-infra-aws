@@ -8,6 +8,25 @@ variable "databricks_host" {
   type        = string
 }
 
+variable "workspace_id" {
+  description = "Numeric workspace ID, checked by the validation notebook"
+  type        = number
+}
+
+variable "metastore_id" {
+  description = "Expected Unity Catalog metastore ID, checked by the validation notebook; null or empty skips that check"
+  type        = string
+  nullable    = true
+  default     = null
+}
+
+variable "platform_admin_group_name" {
+  description = "Account group expected to be workspace admin, checked by the validation notebook; null skips that check"
+  type        = string
+  nullable    = true
+  default     = null
+}
+
 variable "region" {
   description = "AWS region for the S3 bucket and IAM role (e.g. us-east-2)"
   type        = string
@@ -19,7 +38,7 @@ variable "bucket_name" {
 }
 
 variable "bucket_force_destroy" {
-  description = "Allow Terraform to delete the bucket even if it still contains objects"
+  description = "Allow Terraform to delete the Unity Catalog data on destroy: the bucket even if it still contains objects, and the catalog and external location even if they still have contents or dependents"
   type        = bool
   default     = false
 }

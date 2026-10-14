@@ -43,6 +43,8 @@ This repository provisions Databricks workspaces on AWS with:
   - Catalog and grants (`catalog-config.yaml`)
   - Cluster policies (`cluster-policy-config.yaml`)
   - Secret scope (`secret-scope-config.yaml`)
+  - Validation notebook `/Shared/platform/workspace-bootstrap-validation`, with this environment's expected values
+    (`modules/workspace_bootstrap/notebooks/workspace-bootstrap-validation.py`; see DEPLOYMENT.md section 6)
   - Clusters and SQL warehouses (`cluster-config.yaml`, `sql-warehouse-config.yaml`; modules are commented out in `modules/workspace_bootstrap/main.tf`)
 
 ## What this does not create

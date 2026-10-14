@@ -25,6 +25,7 @@ module "external_location" {
   external_location_grant_principals = var.external_location_grant_principals
   external_location_grant_privileges = var.external_location_grant_privileges
   external_location_owner            = var.external_location_owner
+  force_destroy                      = var.bucket_force_destroy
   tags                               = var.default_tags
 
   depends_on = [module.s3_storage]
@@ -39,6 +40,7 @@ module "unity_catalog" {
   enable_catalog_grants    = var.enable_catalog_grants
   catalog_grant_principals = var.catalog_grant_principals
   catalog_grant_privileges = var.catalog_grant_privileges
+  force_destroy            = var.bucket_force_destroy
 
   depends_on = [module.external_location]
 }
