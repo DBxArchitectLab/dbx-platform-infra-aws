@@ -108,3 +108,11 @@ Run `terragrunt plan` first in each directory.
 `dev-*`, `uat-*` or `prod-*`) and an action (`validate`, `plan`, `apply` or `destroy`). The job runs in the
 matching GitHub environment (`prod-*` → `prod`, `uat-*` → `uat`, everything else → `dev`) and reads its
 secrets from there.
+
+## Contributing and license
+
+This repository is part of [DBX Architect Lab](https://www.youtube.com/@DBxArchitectLab): the videos walk through the architecture and the
+deployment step by step.
+
+Issues and pull requests are welcome; see [CONTRIBUTING.md](CONTRIBUTING.md). Licensed under the
+[Apache License 2.0](LICENSE); see also [NOTICE](NOTICE).
